@@ -34,8 +34,8 @@ class MongoSession {
 		// array of mongo db servers
 		'servers'   	=> array(
 			array(
-				'host'          => Mongo::DEFAULT_HOST,
-				'port'          => Mongo::DEFAULT_PORT,
+				'host'          => \Mongo::DEFAULT_HOST,
+				'port'          => \Mongo::DEFAULT_PORT,
                 	'username'      => null,
                 	'password'      => null
             		)
@@ -130,13 +130,13 @@ class MongoSession {
 				if (!empty($server['username']) && !empty($server['password'])) {
 					$str .= $server['username'] . ':' . $server['password'] . '@';
 				}
-				$str .= !empty($server['host']) ? $server['host'] : Mongo::DEFAULT_HOST;
-				$str .= ':' . (!empty($server['port']) ? (int) $server['port'] : Mongo::DEFAULT_PORT);
+				$str .= !empty($server['host']) ? $server['host'] : \Mongo::DEFAULT_HOST;
+				$str .= ':' . (!empty($server['port']) ? (int) $server['port'] : \Mongo::DEFAULT_PORT);
 				array_push($connections, $str);
 			}
 		} else {
 			// use default connection settings
-			array_push($connections, Mongo::DEFAULT_HOST . ':' . Mongo::DEFAULT_PORT);
+			array_push($connections, \Mongo::DEFAULT_HOST . ':' . \Mongo::DEFAULT_PORT);
 		}
 
 		// add immediate connection, although this is the default driver action
