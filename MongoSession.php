@@ -256,8 +256,8 @@ class MongoSession {
 		$new_obj = array(
 			'data'		=> $data,
 			'lock'		=> 0,
-			'active'		=> 1,
-			'expiry'		=> $expiry
+			'active'	=> 1,
+			'expiry'	=> $expiry
 		);
 
 		// check for existing session for merge
