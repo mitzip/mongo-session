@@ -28,8 +28,8 @@ class MongoSession {
 		'database'      => 'session',   // name of MongoDB database
 		'collection'    => 'session',   // name of MongoDB collection
 
-		// replicaSet name, false if no replicaSet
-		'replicaSet'		=> false,
+		// replicaSet name
+		'replicaSet'		=> '',
 
 		// array of mongo db servers
 		'servers'   	=> array(
@@ -54,8 +54,8 @@ class MongoSession {
 	/**
 	 * Default constructor.
 	 *
-	 * @access  public
-	 * @param   array   $config
+	 * @access	public
+	 * @param		array	$config
 	 */
 	public function __construct($config = array()) {
 		// initialize the database
@@ -106,8 +106,8 @@ class MongoSession {
 	 * Initialize MongoDB. There is currently no support for persistent
 	 * connections.  It would be very easy to implement, I just didn't need it.
 	 *
-	 * @access  private
-	 * @param   array   $config
+	 * @access	private
+	 * @param		array	$config
 	 */
 	private function _init($config) {
 		// ensure they supplied a database
@@ -143,7 +143,7 @@ class MongoSession {
 		$opts = array('connect' => true);
 
 		// support replica sets
-		if ($this->_config['replicaSet']) {
+		if ($this->_config['replicaSet'] != '') {
 			$opts['replicaSet'] = $this->_config['replicaSet'];
 		}
 
@@ -192,7 +192,7 @@ class MongoSession {
 	/**
 	 * Open does absolutely nothing as we already have an open connection.
 	 *
-	 * @access  public
+	 * @access	public
 	 * @return	bool
 	 */
 	public function open($save_path, $session_name) {
@@ -203,7 +203,7 @@ class MongoSession {
 	 * Close does absolutely nothing as we can assume __destruct handles
 	 * things just fine.
 	 *
-	 * @access  public
+	 * @access	public
 	 * @return	bool
 	 */
 	public function close() {
@@ -214,7 +214,7 @@ class MongoSession {
 	 * Read the session data.
 	 *
 	 * @access	public
-	 * @param	string	$id
+	 * @param		string	$id
 	 * @return	string
 	 */
 	public function read($id) {
@@ -243,9 +243,9 @@ class MongoSession {
 	 * Atomically write data to the session, ensuring we remove any
 	 * read locks.
 	 *
-	 * @access  public
-	 * @param   string  $id
-	 * @param   mixed   $data
+	 * @access	public
+	 * @param		string	$id
+	 * @param		mixed	$data
 	 * @return	bool
 	 */
 	public function write($id, $data) {
@@ -292,9 +292,9 @@ class MongoSession {
 	 * Destroys the session by removing the document with
 	 * matching session_id.
 	 *
-	 * @access  public
-	 * @param   string  $id
-	 * @return  bool
+	 * @access	public
+	 * @param		string	$id
+	 * @return	bool
 	 */
 	public function destroy($id) {
 		$this->_mongo->remove(array('session_id' => $id), true);
@@ -304,7 +304,7 @@ class MongoSession {
 	/**
 	 * Garbage collection. Remove all expired entries atomically.
 	 *
-	 * @access  public
+	 * @access	public
 	 * @return	bool
 	 */
 	public function gc() {
@@ -341,12 +341,11 @@ class MongoSession {
 	 *
 	 * @author	Benson Wong (mostlygeek@gmail.com)
 	 * @access	private
-	 * @param	string	$id
+	 * @param		string	$id
 	 */
 	private function _lock($id) {
 		$remaining = 30000000;
 		$timeout = 5000;
-
 		do {
 			try {
 				$query = array('session_id' => $id, 'lock' => 0);
