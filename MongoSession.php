@@ -1,4 +1,4 @@
-<?php
+<?php namespace Cballou
 /*
  * This MongoDB session handler is intended to store any data you see fit.
  * One interesting optimization to note is the setting of the active flag
@@ -7,40 +7,39 @@
  * all expired sessions. This should most likely be implemented as a cronjob
  * script.
  *
- * @author		Corey Ballou
+ * @author	Corey Ballou
  * @copyright	Corey Ballou (2010)
+ *
+ * @author	David Mitchel
+ * @license	MIT
  *
  */
 class MongoSession {
 
-    // default config with support for multiple servers
-    // (helpful for sharding and replication setups)
-    protected $_config = array(
-        // cookie related vars
-        'cookie_path'   => '/',
-        'cookie_domain' => '.mydomain.com', // .mydomain.com
+	// default config with support for multiple servers
+	// (helpful for sharding and replication setups)
+	protected $_config = array(
+		// cookie related vars
+		'cookie_path'   => '/',
+		'cookie_domain' => '.mydomain.com', // .mydomain.com
 
-        // session related vars
-        'lifetime'      => 3600,        // session lifetime in seconds
-        'database'      => 'session',   // name of MongoDB database
-        'collection'    => 'session',   // name of MongoDB collection
+		// session related vars
+		'lifetime'      => 3600,        // session lifetime in seconds
+		'database'      => 'session',   // name of MongoDB database
+		'collection'    => 'session',   // name of MongoDB collection
 
-	// persistent related vars
-	'persistent' 	=> false, 		// persistent connection to DB?
-        'persistentId' 	=> 'MongoSession', 	// name of persistent connection
+		// replicaSet name, false if no replicaSet
+		'replicaSet'		=> false,
 
-	// whether we're supporting replicaSet
-	'replicaSet'		=> false,
-
-	// array of mongo db servers
-        'servers'   	=> array(
-		array(
-                	'host'          => Mongo::DEFAULT_HOST,
-                	'port'          => Mongo::DEFAULT_PORT,
+		// array of mongo db servers
+		'servers'   	=> array(
+			array(
+				'host'          => Mongo::DEFAULT_HOST,
+				'port'          => Mongo::DEFAULT_PORT,
                 	'username'      => null,
                 	'password'      => null
             		)
-        	)
+		)
 	);
 
 	// stores the connection
@@ -52,135 +51,130 @@ class MongoSession {
 	// stores session data results
 	protected $_session;
 
-    /**
-     * Default constructor.
-     *
-     * @access  public
-     * @param   array   $config
-     */
-    public function __construct($config = array()) {
-        // initialize the database
-        $this->_init(empty($config) ? $this->_config : $config);
+	/**
+	 * Default constructor.
+	 *
+	 * @access  public
+	 * @param   array   $config
+	 */
+	public function __construct($config = array()) {
+	// initialize the database
+	$this->_init(empty($config) ? $this->_config : $config);
 
-        // set object as the save handler
-        session_set_save_handler(
-            array(&$this, 'open'),
-            array(&$this, 'close'),
-            array(&$this, 'read'),
-            array(&$this, 'write'),
-            array(&$this, 'destroy'),
-            array(&$this, 'gc')
-        );
+	// set object as the save handler
+	session_set_save_handler(
+		array(&$this, 'open'),
+		array(&$this, 'close'),
+		array(&$this, 'read'),
+		array(&$this, 'write'),
+		array(&$this, 'destroy'),
+		array(&$this, 'gc')
+	);
 
-        // set some important session vars
-        ini_set('session.auto_start',               0);
-        ini_set('session.gc_probability',           1);
-        ini_set('session.gc_divisor',               100);
-        ini_set('session.gc_maxlifetime',           $this->_config['lifetime']);
-        ini_set('session.referer_check',            '');
-        ini_set('session.entropy_file',             '/dev/urandom');
-        ini_set('session.entropy_length',           16);
-        ini_set('session.use_cookies',              1);
-        ini_set('session.use_only_cookies',         1);
-        ini_set('session.use_trans_sid',            0);
-        ini_set('session.hash_function',            1);
-        ini_set('session.hash_bits_per_character',  5);
+	// set some important session vars
+	ini_set('session.auto_start',               0);
+	ini_set('session.gc_probability',           1);
+	ini_set('session.gc_divisor',               100);
+	ini_set('session.gc_maxlifetime',           $this->_config['lifetime']);
+	ini_set('session.referer_check',            '');
+	ini_set('session.entropy_file',             '/dev/urandom');
+	ini_set('session.entropy_length',           16);
+	ini_set('session.use_cookies',              1);
+	ini_set('session.use_only_cookies',         1);
+	ini_set('session.use_trans_sid',            0);
+	ini_set('session.hash_function',            1);
+	ini_set('session.hash_bits_per_character',  5);
 
-        // disable client/proxy caching
-        session_cache_limiter('nocache');
+	// disable client/proxy caching
+	session_cache_limiter('nocache');
 
-        // set the cookie parameters
-        session_set_cookie_params(
-			$this->_config['lifetime'],
-			$this->_config['cookie_path'],
-			$this->_config['cookie_domain']
-		);
+	// set the cookie parameters
+	session_set_cookie_params(
+		$this->_config['lifetime'],
+		$this->_config['cookie_path'],
+		$this->_config['cookie_domain']
+	);
 
-        // name the session
-        session_name('mongo_sess');
+	// name the session
+	session_name('mongo_sess');
 
-        // start it up
-        session_start();
+	// start it up
+	session_start();
 	}
 
-    /**
-     * Initialize MongoDB. There is currently no support for persistent
-     * connections.  It would be very easy to implement, I just didn't need it.
-     *
-     * @access  private
-     * @param   array   $config
-     */
-    private function _init($config) {
-        // ensure they supplied a database
-        if (empty($config['database'])) {
-            throw new Exception('You must specify a MongoDB database to use for session storage.');
-        }
+	/**
+	 * Initialize MongoDB. There is currently no support for persistent
+	 * connections.  It would be very easy to implement, I just didn't need it.
+	 *
+	 * @access  private
+	 * @param   array   $config
+	 */
+	private function _init($config) {
+	// ensure they supplied a database
+	if (empty($config['database'])) {
+		throw new Exception('You must specify a MongoDB database to use for session storage.');
+	}
 
-        if (empty($config['collection'])) {
-            throw new Exception('You must specify a MongoDB collection to use for session storage.');
-        }
+	if (empty($config['collection'])) {
+		throw new Exception('You must specify a MongoDB collection to use for session storage.');
+	}
 
-        // update config
-        $this->_config = $config;
+	// update config
+	$this->_config = $config;
 
-        // generate server connection strings
-        $connections = array();
-        if (!empty($this->_config['servers'])) {
-            foreach ($this->_config['servers'] as $server) {
-                $str = '';
-                if (!empty($server['username']) && !empty($server['password'])) {
-                    $str .= $server['username'] . ':' . $server['password'] . '@';
-                }
-				$str .= !empty($server['host']) ? $server['host'] : Mongo::DEFAULT_HOST;
-                $str .= ':' . (!empty($server['port']) ? (int) $server['port'] : Mongo::DEFAULT_PORT);
-                array_push($connections, $str);
-            }
-        } else {
-            // use default connection settings
-            array_push($connections, Mongo::DEFAULT_HOST . ':' . Mongo::DEFAULT_PORT);
-        }
+	// generate server connection strings
+	$connections = array();
+	if (!empty($this->_config['servers'])) {
+		foreach ($this->_config['servers'] as $server) {
+			$str = '';
+			if (!empty($server['username']) && !empty($server['password'])) {
+				$str .= $server['username'] . ':' . $server['password'] . '@';
+			}
+			$str .= !empty($server['host']) ? $server['host'] : Mongo::DEFAULT_HOST;
+			$str .= ':' . (!empty($server['port']) ? (int) $server['port'] : Mongo::DEFAULT_PORT);
+			array_push($connections, $str);
+		}
+		} else {
+		// use default connection settings
+		array_push($connections, Mongo::DEFAULT_HOST . ':' . Mongo::DEFAULT_PORT);
+		}
 
-		// add immediate connection
+		// add immediate connection, although this is the default driver action
 		$opts = array('connect' => true);
-
-		// support persistent connections
-		if ($this->_config['persistent'] && !empty($this->_config['persistentId'])) {
-            $opts['persist'] = $this->_config['persistentId'];
-        }
 
 		// support replica sets
 		if ($this->_config['replicaSet']) {
-			$opts['replicaSet'] = true;
+			$opts['replicaSet'] = $this->_config['replicaSet'];
 		}
 
-        // load mongo server connection
+		// load mongo server connection
 		try {
 			$this->_connection = new Mongo('mongodb://' . implode(',', $connections), $opts);
 		} catch (Exception $e) {
 			throw new Exception('Can\'t connect to the MongoDB server.');
 		}
 
-        // load the db
-        try {
-            $mongo = $this->_connection->selectDB($this->_config['database']);
-        } catch (InvalidArgumentException $e) {
-            throw new Exception('The MongoDB database specified in the config does not exist.');
-        }
+		// load the db
+		try {
+			$mongo = $this->_connection->selectDB($this->_config['database']);
+		} catch (InvalidArgumentException $e) {
+			throw new Exception('The MongoDB database specified in the config does not exist.');
+		}
 
-        // load collection
-        try {
-            $this->_mongo = $mongo->selectCollection($this->_config['collection']);
-        } catch(Exception $e) {
-            throw new Exception('The MongoDB collection specified in the config does not exist.');
-        }
+		// load collection
+		try {
+			$this->_mongo = $mongo->selectCollection($this->_config['collection']);
+		} catch(Exception $e) {
+			throw new Exception('The MongoDB collection specified in the config does not exist.');
+		}
 
-        // proper indexing on the expiration
-        $this->_mongo->ensureIndex(
+		// proper indexing on the expiration
+		$this->_mongo->ensureIndex(
 			array('expiry' => 1),
 			array('name' => 'expiry',
-				  'unique' => true,
-				  'dropDups' => true,
-				  'safe' => true
+				'unique' => true,
+				'dropDups' => true,
+				'safe' => true
 			)
 		);
 
@@ -188,9 +182,9 @@ class MongoSession {
 		$this->_mongo->ensureIndex(
 			array('session_id' => 1, 'lock' => 1),
 			array('name' => 'session_id',
-				  'unique' => true,
-				  'dropDups' => true,
-				  'safe' => true
+				'unique' => true,
+				'dropDups' => true,
+				'safe' => true
 			)
 		);
 	}
