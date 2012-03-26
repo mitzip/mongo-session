@@ -1,4 +1,4 @@
-<?php namespace Cballou
+<?php namespace Cballou;
 /*
  * This MongoDB session handler is intended to store any data you see fit.
  * One interesting optimization to note is the setting of the active flag
