@@ -270,6 +270,7 @@ class MongoSession {
         if (!empty($this->_session)) {
             $obj = (array) $this->_session;
             $new_obj = array_merge($obj, $new_obj);
+	    unset($new_obj['_id']); // cannot update mongoID
         }
 
 		// atomic update
