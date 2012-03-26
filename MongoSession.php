@@ -149,7 +149,7 @@ class MongoSession {
 
 		// load mongo server connection
 		try {
-			$this->_connection = new Mongo('mongodb://' . implode(',', $connections), $opts);
+			$this->_connection = new \Mongo('mongodb://' . implode(',', $connections), $opts);
 		} catch (Exception $e) {
 			throw new Exception('Can\'t connect to the MongoDB server.');
 		}
