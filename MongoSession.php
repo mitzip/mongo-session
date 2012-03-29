@@ -20,8 +20,8 @@ class MongoSession {
 	// (helpful for sharding and replication setups)
 	protected $_config = array(
 		// cookie related vars
-		'cookie_path'   => '/',
-		'cookie_domain' => '.mydomain.com', // .mydomain.com
+		'cookie_path'   => '/', // cookie works on all paths
+		'cookie_domain' => '.example.com', // subdomain wildcard for example.com
 
 		// session related vars
 		'lifetime'      => 3600,        // session lifetime in seconds
@@ -34,8 +34,8 @@ class MongoSession {
 		// array of mongo db servers
 		'servers'   	=> array(
 			array(
-				'host'          => \Mongo::DEFAULT_HOST,
-				'port'          => \Mongo::DEFAULT_PORT,
+			'host'          => \Mongo::DEFAULT_HOST,
+			'port'          => \Mongo::DEFAULT_PORT,
                 	'username'      => null,
                 	'password'      => null
             		)
@@ -48,6 +48,9 @@ class MongoSession {
 	// stores the mongo db
 	protected $_mongo;
 
+	// session id
+	protected $_sessionid;
+
 	// stores session data results
 	protected $_session;
 
@@ -55,9 +58,12 @@ class MongoSession {
 	 * Default constructor.
 	 *
 	 * @access	public
-	 * @param		array	$config
+	 * @param	array	$config
 	 */
 	public function __construct($config = array()) {
+		// writes session before __destruct is called
+		register_shutdown_function('session_write_close');
+
 		// initialize the database
 		$this->_init(empty($config) ? $this->_config : $config);
 
@@ -76,38 +82,34 @@ class MongoSession {
 		ini_set('session.gc_probability',           1);
 		ini_set('session.gc_divisor',               100);
 		ini_set('session.gc_maxlifetime',           $this->_config['lifetime']);
-		ini_set('session.referer_check',            '');
-		ini_set('session.entropy_file',             '/dev/urandom');
-		ini_set('session.entropy_length',           16);
 		ini_set('session.use_cookies',              1);
 		ini_set('session.use_only_cookies',         1);
 		ini_set('session.use_trans_sid',            0);
-		ini_set('session.hash_function',            1);
-		ini_set('session.hash_bits_per_character',  5);
+		ini_set('session.name',                     'mongo_sess');
+		ini_set('session.cookie_lifetime',          $this->_config['lifetime']);
+		ini_set('session.cookie_path',              $this->_config['cookie_path']);
+		ini_set('session.cookie_domain',            $this->_config['cookie_domain']);
+		ini_set('suhosin.cookie.plainlist',         'mongo_sess');
+		ini_set('suhosin.session.encrypt',          0);
 
 		// disable client/proxy caching
 		session_cache_limiter('nocache');
 
-		// set the cookie parameters
-		session_set_cookie_params(
-			$this->_config['lifetime'],
-			$this->_config['cookie_path'],
-			$this->_config['cookie_domain']
-		);
-
-		// name the session
-		session_name('mongo_sess');
+		// set session id
+		$this->_sessionid = session_id();
+		if ($this->_sessionid == "") {
+			session_id((string) new \MongoId());
+		}
 
 		// start it up
 		session_start();
 	}
 
 	/**
-	 * Initialize MongoDB. There is currently no support for persistent
-	 * connections.  It would be very easy to implement, I just didn't need it.
+	 * Initialize MongoDB.
 	 *
 	 * @access	private
-	 * @param		array	$config
+	 * @param	array	$config
 	 */
 	private function _init($config) {
 		// ensure they supplied a database
@@ -180,8 +182,8 @@ class MongoSession {
 
 		// proper indexing of session id and lock
 		$this->_mongo->ensureIndex(
-			array('session_id' => 1, 'lock' => 1),
-			array('name' => 'session_id',
+			array('_id' => 1, 'lock' => 1),
+			array('name' => '_id',
 				'unique' => true,
 				'dropDups' => true,
 				'safe' => true
@@ -214,7 +216,7 @@ class MongoSession {
 	 * Read the session data.
 	 *
 	 * @access	public
-	 * @param		string	$id
+	 * @param	string	$id
 	 * @return	string
 	 */
 	public function read($id) {
@@ -222,10 +224,13 @@ class MongoSession {
 		// the lock to be released
 		$this->_lock($id);
 
+                // Convert $id to proper MongoID
+		$id = new \MongoId($id);
+
 		// exclude results that are inactive or expired
 		$result = $this->_mongo->findOne(
 			array(
-				'session_id'	=> $id,
+				'_id'		=> $id,
 				'expiry'    	=> array('$gte' => time()),
 				'active'    	=> 1
 			)
@@ -244,11 +249,14 @@ class MongoSession {
 	 * read locks.
 	 *
 	 * @access	public
-	 * @param		string	$id
-	 * @param		mixed	$data
+	 * @param	string	$id
+	 * @param	mixed	$data
 	 * @return	bool
 	 */
 	public function write($id, $data) {
+		// Convert $id to proper MongoID
+		$id = new \MongoId($id);
+
 		// create expires
 		$expiry = time() + $this->_config['lifetime'];
 
@@ -263,21 +271,21 @@ class MongoSession {
 		// check for existing session for merge
 		if (!empty($this->_session)) {
 			$obj = (array) $this->_session;
+			unset($obj['_id']); // cannot update mongoID
 			$new_obj = array_merge($obj, $new_obj);
-			unset($new_obj['_id']); // cannot update mongoID
 		}
 
 		// atomic update
-		$query = array('session_id' => $id);
+		$query = array('_id' => $id);
 
 		// update options
 		$options = array(
-			'upsert' 	=> TRUE,
+			'upsert'	=> TRUE,
 			'safe'		=> TRUE,
 			'fsync'		=> TRUE
 		);
 
-		// perform the update or insert
+		// perform the update
 		try {
 			$result = $this->_mongo->update($query, array('$set' => $new_obj), $options);
 			return $result['ok'] == 1;
@@ -293,11 +301,14 @@ class MongoSession {
 	 * matching session_id.
 	 *
 	 * @access	public
-	 * @param		string	$id
+	 * @param	string	$id
 	 * @return	bool
 	 */
 	public function destroy($id) {
-		$this->_mongo->remove(array('session_id' => $id), true);
+		// Convert $id to proper MongoID
+		$id = new \MongoId($id);
+
+		$this->_mongo->remove(array('_id' => $id), true);
 		return true;
 	}
 
@@ -327,31 +338,29 @@ class MongoSession {
 	}
 
 	/**
-	 * Solves issues with write() and close() throwing exceptions.
-	 *
-	 * @access	public
-	 * @return	void
-	 */
-	public function __destruct() {
-		session_write_close();
-	}
-
-	/**
 	 * Create a global lock for the specified document.
 	 *
 	 * @author	Benson Wong (mostlygeek@gmail.com)
 	 * @access	private
-	 * @param		string	$id
+	 * @param	string	$id
 	 */
 	private function _lock($id) {
+		// Convert $id to proper MongoID
+		$id = new \MongoId($id);
+
 		$remaining = 30000000;
 		$timeout = 5000;
 		do {
 			try {
-				$query = array('session_id' => $id, 'lock' => 0);
-				$update = array('$set' => array('lock' => 1));
-				$options = array('safe' => true, 'upsert' => true);
-				$result = $this->_mongo->update($query, $update, $options);
+				$openSession = array('_id' => $id, 'lock' => 0);
+				$lockedSession = array('_id' => $id, 'lock' => 1);
+				$lock = array('$set' => array('lock' => 1));
+				$options = array('safe' => true);
+				if ($this->_mongo->findOne($openSession)) {
+					$result = $this->_mongo->update($openSession, $lock, $options);
+				} else {
+					$result = $this->_mongo->insert($lockedSession, $options);
+				}
 				if ($result['ok'] == 1) {
 					return true;
 				}
