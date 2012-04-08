@@ -1,3 +1,10 @@
+FORKED
+------
+
+Below you'll find the original readme for the MongoSession project I forked to make use of new MongoDB and PHP 5.4.0 capabilities.
+It's not a complete work and probably won't work if you clone it. When I finish it I will update this readme accordingly.
+
+
 Overview
 --------
 The MongoSession PHP session handler class was built as a drop-in for easily switching to handling sessions using Mongo. It's a 
