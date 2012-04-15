@@ -24,9 +24,10 @@ class MongoSession {
 		'cookie_domain' => '.example.com', // subdomain wildcard for example.com
 
 		// session related vars
+		'name'		=> 'mongo_sess',// session name
 		'lifetime'      => 3600,        // session lifetime in seconds
 		'database'      => 'session',   // name of MongoDB database
-		'collection'    => 'session',   // name of MongoDB collection
+		'collection'    => 'sessions',   // name of MongoDB collection
 
 		// replicaSet name
 		'replicaSet'		=> '',
@@ -49,7 +50,7 @@ class MongoSession {
 	protected $_mongo;
 
 	// session id
-	protected $_sessionid;
+	protected $_session_id;
 
 	// stores session data results
 	protected $_session;
@@ -85,19 +86,20 @@ class MongoSession {
 		ini_set('session.use_cookies',              1);
 		ini_set('session.use_only_cookies',         1);
 		ini_set('session.use_trans_sid',            0);
-		ini_set('session.name',                     'mongo_sess');
+		ini_set('session.name',                     $this->_config['name']);
 		ini_set('session.cookie_lifetime',          $this->_config['lifetime']);
 		ini_set('session.cookie_path',              $this->_config['cookie_path']);
 		ini_set('session.cookie_domain',            $this->_config['cookie_domain']);
-		ini_set('suhosin.cookie.plainlist',         'mongo_sess');
-		ini_set('suhosin.session.encrypt',          0);
 
 		// disable client/proxy caching
 		session_cache_limiter('nocache');
 
 		// set session id
-		$this->_sessionid = session_id();
-		if ($this->_sessionid == "") {
+		if (isset($_COOKIE[$this->_config['name']])) {
+			$this->read($_COOKIE[$this->_config['name']],1);
+		}
+
+		if (!isset($this->_session_id)) {
 			session_id((string) new \MongoId());
 		}
 
@@ -174,19 +176,20 @@ class MongoSession {
 		$this->_mongo->ensureIndex(
 			array('expiry' => 1),
 			array('name' => 'expiry',
-				'unique' => true,
-				'dropDups' => true,
-				'safe' => true
+				'unique' => 1,
+				'dropDups' => 1,
+				'safe' => 1,
+				'sparse' => 1
 			)
 		);
 
 		// proper indexing of session id and lock
 		$this->_mongo->ensureIndex(
 			array('_id' => 1, 'lock' => 1),
-			array('name' => '_id',
-				'unique' => true,
-				'dropDups' => true,
-				'safe' => true
+			array('name' => '_id_lock',
+				'unique' => 1,
+				'dropDups' => 1,
+				'safe' => 1
 			)
 		);
 	}
@@ -219,10 +222,10 @@ class MongoSession {
 	 * @param	string	$id
 	 * @return	string
 	 */
-	public function read($id) {
+	public function read($id, $internal = null) {
 		// obtain a read lock on the data, or subsequently wait for
 		// the lock to be released
-		$this->_lock($id);
+		!$internal ? $this->_lock($id) : '';
 
                 // Convert $id to proper MongoID
 		$id = new \MongoId($id);
@@ -236,9 +239,13 @@ class MongoSession {
 			)
 		);
 
-		if (isset($result['data'])) {
+		if (!empty($result)) {
+			$this->_session_id = $result['_id'];
+			unset($result['_id']);
 			$this->_session = $result;
-			return $result['data'];
+			if (isset($result['data'])) {
+				return $result['data'];
+			}
 		}
 
 		return '';
@@ -269,9 +276,8 @@ class MongoSession {
 		);
 
 		// check for existing session for merge
-		if (!empty($this->_session)) {
+		if (isset($this->_session)) {
 			$obj = (array) $this->_session;
-			unset($obj['_id']); // cannot update mongoID
 			$new_obj = array_merge($obj, $new_obj);
 		}
 
@@ -280,9 +286,8 @@ class MongoSession {
 
 		// update options
 		$options = array(
-			'upsert'	=> TRUE,
-			'safe'		=> TRUE,
-			'fsync'		=> TRUE
+			'safe'		=> 1,
+			'fsync'		=> 1
 		);
 
 		// perform the update
@@ -327,9 +332,9 @@ class MongoSession {
 
 		// update options
 		$options = array(
-			'multiple'	=> TRUE,
-			'safe'		=> TRUE,
-			'fsync'		=> TRUE
+			'multiple'	=> 1,
+			'safe'		=> 1,
+			'fsync'		=> 1
 		);
 
 		// update expired elements and set to inactive
@@ -350,12 +355,14 @@ class MongoSession {
 
 		$remaining = 30000000;
 		$timeout = 5000;
+
+		$openSession = array('_id' => $id, 'lock' => 0);
+		$lockedSession = array('_id' => $id, 'lock' => 1);
+		$lock = array('$set' => array('lock' => 1));
+		$options = array('safe' => true);
+
 		do {
 			try {
-				$openSession = array('_id' => $id, 'lock' => 0);
-				$lockedSession = array('_id' => $id, 'lock' => 1);
-				$lock = array('$set' => array('lock' => 1));
-				$options = array('safe' => true);
 				if ($this->_mongo->findOne($openSession)) {
 					$result = $this->_mongo->update($openSession, $lock, $options);
 				} else {
