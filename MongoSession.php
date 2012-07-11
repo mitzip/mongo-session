@@ -10,7 +10,7 @@
  * @author	Corey Ballou
  * @copyright	Corey Ballou (2010)
  *
- * @author	David Mitchel
+ * @author	DavidMitchel.com
  * @license	MIT
  *
  */
